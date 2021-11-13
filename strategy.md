@@ -66,6 +66,6 @@ the semaphores
 
 - the trucks analogy is similar to the bus analoy in the border control project
 ----
-//SALARIES AND PROFIT (exiting the IT world and entering the Business world)
+### SALARIES AND PROFIT (exiting the IT world and entering the Business world)
 till now my idea is to have a the salaries of the workers subtracted from the total profit each time the truck delivers a package. of course the profit is controlled using a mutex if there are multiple processes that can modify it.
 
