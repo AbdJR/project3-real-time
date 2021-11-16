@@ -46,6 +46,10 @@ extern int percentage_suspend_threshold;
 extern int line_time_range[2];
 //the random time for each line
 extern int lines_working_times[10];
+//the number of workers to work in each line
+extern int num_of_workers_in_line;
+//the mutexes that are needed to coordinate the work between workers in each line
+extern pthread_mutex_t line_mutex[10];
 
 int main(int argc, char *argv[])
 {
@@ -76,13 +80,13 @@ int main(int argc, char *argv[])
         }
         else if (lines_pid[i] == 0)
         {
-            pthread_t workers[INITIAL_WORKERS_IN_LINE];
-            //code for serial lines
+            //code for Sequential lines
             if (i < 5)
             {
                 while (1)
                 {
-                    if (semop(sequential_semaphores[(i+1)%5], &acquire, 1) < 0)
+                    pthread_t workers[num_of_workers_in_line];
+                    if (semop(sequential_semaphores[(i + 1) % 5], &acquire, 1) < 0)
                     {
                         perror("semop acquire");
                         exit(9);
@@ -93,52 +97,79 @@ int main(int argc, char *argv[])
                         exit(9);
                     }
                     //working with the threads now
-                    for (int j = 0; j < INITIAL_WORKERS_IN_LINE; j++)
+                    for (int j = 0; j < num_of_workers_in_line; j++)
                     {
                         int *index = malloc(sizeof(int));
                         *index = i;
                         if (pthread_create(&workers[j], NULL, &sequential_function, index) != 0)
                         {
-                            perror("Failed to create a serial line thread");
+                            perror("Failed to create a Sequential line thread");
                         }
                     }
-                    for (int j = 0; j < INITIAL_WORKERS_IN_LINE; j++)
+                    for (int j = 0; j < num_of_workers_in_line; j++)
                     {
                         if (pthread_join(workers[j], NULL) != 0)
                         {
-                            perror("Failed to join a serial line thread");
+                            perror("Failed to join a Sequential line thread");
                         }
                     }
                     //finished the threads work
-                    if (semop(sequential_semaphores[i%5], &release, 1) < 0)
+                    if (semop(sequential_semaphores[i % 5], &release, 1) < 0)
                     {
                         perror("semop release");
                         exit(9);
                     }
-                    if (semop(sequential_semaphores[(i+1)%5], &release, 1) < 0)
+                    if (semop(sequential_semaphores[(i + 1) % 5], &release, 1) < 0)
                     {
                         perror("semop release");
                         exit(9);
                     }
                 }
-
             }
             //code for parallel lines
             else
             {
-                for (int j = 0; j < 10; j++)
+                while (1)
                 {
-                    if (pthread_create(&workers[j], NULL, &parallel_function, i) != 0)
+                    pthread_t workers[num_of_workers_in_line];
+                    // if (semop(sequential_semaphores[(i + 1) % 5], &acquire, 1) < 0)
+                    // {
+                    //     perror("semop acquire");
+                    //     exit(9);
+                    // }
+                    // if (semop(sequential_semaphores[i], &acquire, 1) < 0)
+                    // {
+                    //     perror("semop acquire");
+                    //     exit(9);
+                    // }
+                    //working with the threads now
+                    for (int j = 0; j < num_of_workers_in_line; j++)
                     {
-                        perror("Failed to create a parallel line thread");
+                        int *index = malloc(sizeof(int));
+                        *index = i;
+                        if (pthread_create(&workers[j], NULL, &parallel_function, index) != 0)
+                        {
+                            perror("Failed to create a Sequential line thread");
+                        }
                     }
-                }
-                for (int j = 0; j < 10; j++)
-                {
-                    if (pthread_join(workers[j], NULL) != 0)
+                    for (int j = 0; j < num_of_workers_in_line; j++)
                     {
-                        perror("Failed to join a parallel line thread");
+                        if (pthread_join(workers[j], NULL) != 0)
+                        {
+                            perror("Failed to join a Sequential line thread");
+                        }
                     }
+                    // //finished the threads work
+                    // if (semop(sequential_semaphores[i % 5], &release, 1) < 0)
+                    // {
+                    //     perror("semop release");
+                    //     exit(9);
+                    // }
+                    // if (semop(sequential_semaphores[(i + 1) % 5], &release, 1) < 0)
+                    // {
+                    //     perror("semop release");
+                    //     exit(9);
+                    // }
                 }
             }
             return 0;
@@ -149,6 +180,11 @@ int main(int argc, char *argv[])
     {
         waitpid(lines_pid[i], 0, 0);
     }
+    //destroy all the mutexes used before exiting
+    for (int k = 0; k < 10; k++)
+    {
+        pthread_mutex_destroy(&line_mutex[k]);
+    }
     return 0;
 }
 
@@ -156,7 +192,9 @@ void *sequential_function(void *arg)
 {
     int index = *(int *)arg;
     // *(int*)arg = sum //indicator to how we can set the value in the argument
-    usleep(lines_working_times[index]/INITIAL_WORKERS_IN_LINE);
+    pthread_mutex_lock(line_mutex + index);
+    usleep((lines_working_times[index] / num_of_workers_in_line) * 1000000);
+    pthread_mutex_unlock(line_mutex + index);
     free(arg);
 }
 
@@ -164,6 +202,9 @@ void *parallel_function(void *arg)
 {
     int index = *(int *)arg;
     // *(int*)arg = sum //indicator to how we can set the value in the argument
+    pthread_mutex_lock(line_mutex + index);
+    usleep((lines_working_times[index] / num_of_workers_in_line) * 1000000);
+    pthread_mutex_unlock(line_mutex + index);
     free(arg);
 }
 
@@ -195,10 +236,16 @@ void set_values(int has_file)
         percentage_suspend_threshold = 45;
         line_time_range[0] = 5;
         line_time_range[1] = 10;
+        num_of_workers_in_line = INITIAL_WORKERS_IN_LINE;
     }
     for (int k = 0; k < 10; k++)
     {
-        lines_working_times[k] = (rand()%(line_time_range[1] - 
-                        line_time_range[0]))+line_time_range[0];
+        lines_working_times[k] = (rand() % (line_time_range[1] -
+                                            line_time_range[0])) +
+                                 line_time_range[0];
+    }
+    for (int k = 0; k < 10; k++)
+    {
+        pthread_mutex_init(line_mutex + k, NULL);
     }
 }

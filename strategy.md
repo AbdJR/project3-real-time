@@ -69,3 +69,8 @@ the semaphores
 ### SALARIES AND PROFIT (exiting the IT world and entering the Business world)
 till now my idea is to have a the salaries of the workers subtracted from the total profit each time the truck delivers a package. of course the profit is controlled using a mutex if there are multiple processes that can modify it.
 
+
+
+### EDIT 1
+so now we have 10 processes and in there we create and destroy threads in a while(1) loop. ==How Can We now move to the other sequence? should we send a signal from the 5th process to the parent and let the parent choose?
+we can set them to look at a semaphore but if they were all looking at the same semaphore then only 1 laptop can be made with one of the lines while others just keep waiting. We want others to be productive as well, and actually do something while the laptop is being made, but HOW?== 
