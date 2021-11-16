@@ -59,6 +59,7 @@ int main(int argc, char *argv[])
     union semun seq_un;
     seq_un.val = 1;
     int sequential_semaphores[5];
+    //initialising the semaohores
     for (i = 0; i < 5; i++)
     {
         sequential_semaphores[i] = semget(IPC_PRIVATE, 1, 0666 | IPC_CREAT);
@@ -72,6 +73,11 @@ int main(int argc, char *argv[])
             exit(12);
         }
     }
+    int q_id;
+    if ((q_id = msgget(IPC_PRIVATE, 0666 | IPC_CREAT)) < 0)
+    {
+        perror("creating the message queue");
+    }
     for (i = 0; i < NUMBER_OF_LINES; i++)
     {
         if ((lines_pid[i] = fork()) < 0)
@@ -83,6 +89,7 @@ int main(int argc, char *argv[])
             //code for Sequential lines
             if (i < 5)
             {
+
                 while (1)
                 {
                     pthread_t workers[num_of_workers_in_line];
@@ -113,6 +120,18 @@ int main(int argc, char *argv[])
                             perror("Failed to join a Sequential line thread");
                         }
                     }
+                    //now we should do special action if we reached the last of the sequential line
+                    if (i == 4)
+                    {
+                        //this will get filled as each process takes it later
+                        message msg;
+                        for (int i = 0; i < 5; i++)
+                        {
+                            msg.mesg_text[i] = 0;
+                        }
+                        msgsnd(q_id,&msg,sizeof(msg), IPC_NOWAIT);
+
+                    }
                     //finished the threads work
                     if (semop(sequential_semaphores[i % 5], &release, 1) < 0)
                     {
@@ -129,6 +148,7 @@ int main(int argc, char *argv[])
             //code for parallel lines
             else
             {
+
                 while (1)
                 {
                     pthread_t workers[num_of_workers_in_line];
@@ -143,6 +163,13 @@ int main(int argc, char *argv[])
                     //     exit(9);
                     // }
                     //working with the threads now
+                    message r_msg;
+                    //now each process will read until one of them gets a message
+                    do
+                    {
+                        usleep(1000);
+                        
+                    }while(msgrcv(q_id,&r_msg,sizeof(r_msg),0,IPC_NOWAIT) == ENOMSG);
                     for (int j = 0; j < num_of_workers_in_line; j++)
                     {
                         int *index = malloc(sizeof(int));

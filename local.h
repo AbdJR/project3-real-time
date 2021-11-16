@@ -111,6 +111,8 @@ union semun
   ushort *array;
 };
 
+
+
 // typedef struct passenger_t
 // {
 //   int pid;
@@ -152,11 +154,11 @@ union semun
 
 // } hall_t;
 
-// typedef struct mesg_buffer
-// {
-//   long mesg_type;
-//   passenger_t mesg_text;
-// } message;
+typedef struct mesg_buffer
+{
+  long mesg_type;
+  int mesg_text[5];
+} message;
 
 struct sembuf acquire = {0, -1, SEM_UNDO},
               release = {0, 1, SEM_UNDO};
