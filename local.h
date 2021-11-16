@@ -15,8 +15,8 @@
 #include <sys/msg.h>
 #include <pthread.h>  
 
-#define OFFICERS_IN_BORDER 3              //number of Palestinian officers at each border
-#define PAL_PASSENGERS_RATIO 50           //ratio of Palestinians out of 100 of the passengers
+#define NUMBER_OF_LINES 10                //number of Palestinian officers at each border
+#define INITIAL_WORKERS_IN_LINE 10           //ratio of Palestinians out of 100 of the passengers
 #define JOR_PASSENGERS_RATIO 35           //ratio of Jordanians out of 100 of the passengers
 #define FRN_PASSENGERS_RATIO 15           //ratio of Foreigners out of 100 of the passengers
 #define MAX_HALL_THRESHOLD 50             //maximum amount of people in the hall that we can handle
@@ -97,9 +97,9 @@ extern int max_gain_threshold;
 extern int percentage_suspend_threshold;    
 //the range at which we will give random times for each line
 extern int line_time_range[2];
-//the random time for each line
-// extern int lines_working_times[10];
-
+// the random time for each line
+extern int lines_working_times[10];
+//the semaphores needed between the threads
 
 union semun
 {
@@ -108,39 +108,39 @@ union semun
   ushort *array;
 };
 
-typedef struct passenger_t
-{
-  int pid;
-  unsigned char nationality;         //Palestinian 0, Jordanian 1, Foreign 3+
-  unsigned short has_passport;       //to check wether we have the passports or not
-  unsigned short expiray_date_day;   //at which day does the current passport expire, only short required for all fields here
-  unsigned short expiray_date_month; //at which month does the current passport expire
-  unsigned short expiray_date_year;  //at which year does the current passport expire
-  // unsigned int passport_id;       //the id of this specific passoport
-  unsigned short tolerance; //for how long can this person wait in line
-  //used for stopping the officers when hall gets filled later
-  unsigned short my_officer;
-} passenger_t;
+// typedef struct passenger_t
+// {
+//   int pid;
+//   unsigned char nationality;         //Palestinian 0, Jordanian 1, Foreign 3+
+//   unsigned short has_passport;       //to check wether we have the passports or not
+//   unsigned short expiray_date_day;   //at which day does the current passport expire, only short required for all fields here
+//   unsigned short expiray_date_month; //at which month does the current passport expire
+//   unsigned short expiray_date_year;  //at which year does the current passport expire
+//   // unsigned int passport_id;       //the id of this specific passoport
+//   unsigned short tolerance; //for how long can this person wait in line
+//   //used for stopping the officers when hall gets filled later
+//   unsigned short my_officer;
+// } passenger_t;
 
-typedef struct officer_t
-{
-  unsigned short processing_time; //the amount of time taken by officer to handle passengers
-  unsigned short type;            //which crossing point does this officer work at (PAL/JOR or FRN)
-  unsigned short crossing_point;  //at which crossing point will this officer serve at
-} officer_t;
+// typedef struct officer_t
+// {
+//   unsigned short processing_time; //the amount of time taken by officer to handle passengers
+//   unsigned short type;            //which crossing point does this officer work at (PAL/JOR or FRN)
+//   unsigned short crossing_point;  //at which crossing point will this officer serve at
+// } officer_t;
 
-typedef struct crossing_point_t
-{
-  struct officer_t officers[OFFICERS_IN_BORDER]; //We have NUM_OF_OFFICERS amount of Palestinian officers in each border
-  unsigned short type;                           //type of crossing point (PAL/JOR or FRN)
-} crossing_point_t;
+// typedef struct crossing_point_t
+// {
+//   struct officer_t officers[OFFICERS_IN_BORDER]; //We have NUM_OF_OFFICERS amount of Palestinian officers in each border
+//   unsigned short type;                           //type of crossing point (PAL/JOR or FRN)
+// } crossing_point_t;
 
-typedef struct bus_t
-{
-  unsigned short max_capacity;    //how many passengers can the bus handle each trip
-  unsigned short trip_time;       //the time it takes to go to the jordanian side and come back
-  unsigned int num_of_passengers; //current number of passengers
-} bus_t;
+// typedef struct bus_t
+// {
+//   unsigned short max_capacity;    //how many passengers can the bus handle each trip
+//   unsigned short trip_time;       //the time it takes to go to the jordanian side and come back
+//   unsigned int num_of_passengers; //current number of passengers
+// } bus_t;
 
 // typedef struct hall_t
 // {
@@ -149,40 +149,44 @@ typedef struct bus_t
 
 // } hall_t;
 
-typedef struct mesg_buffer
-{
-  long mesg_type;
-  passenger_t mesg_text;
-} message;
+// typedef struct mesg_buffer
+// {
+//   long mesg_type;
+//   passenger_t mesg_text;
+// } message;
 
 struct sembuf acquire = {0, -1, SEM_UNDO},
-              release = {0, 1, SEM_UNDO},
-              acquire_all = {0, -1 * TOTAL_ENTITIES, SEM_UNDO},
-              release_all = {0, TOTAL_ENTITIES, SEM_UNDO};
+              release = {0, 1, SEM_UNDO};
+//               acquire_all = {0, -1 * TOTAL_ENTITIES, SEM_UNDO},
+//               release_all = {0, TOTAL_ENTITIES, SEM_UNDO};
 
-extern passenger_t *PASSENGERS;
-extern officer_t *OFFICERS;
-extern crossing_point_t *CROSSING_POINTS;
-extern bus_t *BUSSES;
+// extern passenger_t *PASSENGERS;
+// extern officer_t *OFFICERS;
+// extern crossing_point_t *CROSSING_POINTS;
+// extern bus_t *BUSSES;
 // extern hall_t HALL;
 
 // set the values for each of the variables 
 void set_values(int);
 void handle_sigusr1(int);
 void free_all();
-passenger_t create_passenger(int);
-officer_t create_officer();
-crossing_point_t create_crossing_point(int, int, int *, int);
+//the function where the sequential workers will work
+void *sequential_function(void *);
+//the function where the parallel workers will work
+// void *parallel_function(void *);
+// passenger_t create_passenger(int);
+// officer_t create_officer();
+// crossing_point_t create_crossing_point(int, int, int *, int);
 // void initialise_semaphores(key_t, union semun, ushort);
-bus_t create_bus(int);
-char *get_info(int);
-int find_length(char *);
-//set the current date for officers to know how to check
-void set_date();
-void sit_in_hall(passenger_t, int, int *, int *, int *, int *, int);
-void go_to_bus(passenger_t, int, int *, int *, int[]);
-void increment_pass(int, int *);
-void increment_reject(int, int *);
-void increment_return(int, int *);
-int kill_the_process(int, int, int);
+// bus_t create_bus(int);
+// char *get_info(int);
+// int find_length(char *);
+// //set the current date for officers to know how to check
+// void set_date();
+// void sit_in_hall(passenger_t, int, int *, int *, int *, int *, int);
+// void go_to_bus(passenger_t, int, int *, int *, int[]);
+// void increment_pass(int, int *);
+// void increment_reject(int, int *);
+// void increment_return(int, int *);
+// int kill_the_process(int, int, int);
 #endif

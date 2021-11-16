@@ -51,12 +51,125 @@ int main(int argc, char *argv[])
 {
     int i, j, k, l; //dummy variablles for counting and iterating through loops
     set_values(0);
+    int lines_pid[NUMBER_OF_LINES];
+    union semun seq_un;
+    seq_un.val = 1;
+    int sequential_semaphores[5];
+    for (i = 0; i < 5; i++)
+    {
+        sequential_semaphores[i] = semget(IPC_PRIVATE, 1, 0666 | IPC_CREAT);
+        if (sequential_semaphores[i] < 0)
+        {
+            perror("semget sequential semaphores");
+        }
+        if (semctl(sequential_semaphores[i], 0, SETVAL, seq_un) < 0)
+        {
+            perror("semctl hall");
+            exit(12);
+        }
+    }
+    for (i = 0; i < NUMBER_OF_LINES; i++)
+    {
+        if ((lines_pid[i] = fork()) < 0)
+        {
+            perror("Forking a Line");
+        }
+        else if (lines_pid[i] == 0)
+        {
+            pthread_t workers[INITIAL_WORKERS_IN_LINE];
+            //code for serial lines
+            if (i < 5)
+            {
+                while (1)
+                {
+                    if (semop(sequential_semaphores[(i+1)%5], &acquire, 1) < 0)
+                    {
+                        perror("semop acquire");
+                        exit(9);
+                    }
+                    if (semop(sequential_semaphores[i], &acquire, 1) < 0)
+                    {
+                        perror("semop acquire");
+                        exit(9);
+                    }
+                    //working with the threads now
+                    for (int j = 0; j < INITIAL_WORKERS_IN_LINE; j++)
+                    {
+                        int *index = malloc(sizeof(int));
+                        *index = i;
+                        if (pthread_create(&workers[j], NULL, &sequential_function, index) != 0)
+                        {
+                            perror("Failed to create a serial line thread");
+                        }
+                    }
+                    for (int j = 0; j < INITIAL_WORKERS_IN_LINE; j++)
+                    {
+                        if (pthread_join(workers[j], NULL) != 0)
+                        {
+                            perror("Failed to join a serial line thread");
+                        }
+                    }
+                    //finished the threads work
+                    if (semop(sequential_semaphores[i%5], &release, 1) < 0)
+                    {
+                        perror("semop release");
+                        exit(9);
+                    }
+                    if (semop(sequential_semaphores[(i+1)%5], &release, 1) < 0)
+                    {
+                        perror("semop release");
+                        exit(9);
+                    }
+                }
 
+            }
+            //code for parallel lines
+            else
+            {
+                for (int j = 0; j < 10; j++)
+                {
+                    if (pthread_create(&workers[j], NULL, &parallel_function, i) != 0)
+                    {
+                        perror("Failed to create a parallel line thread");
+                    }
+                }
+                for (int j = 0; j < 10; j++)
+                {
+                    if (pthread_join(workers[j], NULL) != 0)
+                    {
+                        perror("Failed to join a parallel line thread");
+                    }
+                }
+            }
+            return 0;
+        }
+        usleep(1000);
+    }
+    for (i = 0; i < NUMBER_OF_LINES; i++)
+    {
+        waitpid(lines_pid[i], 0, 0);
+    }
     return 0;
+}
+
+void *sequential_function(void *arg)
+{
+    int index = *(int *)arg;
+    // *(int*)arg = sum //indicator to how we can set the value in the argument
+    usleep(lines_working_times[index]/INITIAL_WORKERS_IN_LINE);
+    free(arg);
+}
+
+void *parallel_function(void *arg)
+{
+    int index = *(int *)arg;
+    // *(int*)arg = sum //indicator to how we can set the value in the argument
+    free(arg);
 }
 
 void set_values(int has_file)
 {
+    srand(time(NULL));
     if (!has_file)
     {
         storage_area_max_threshold = 200;
@@ -82,5 +195,10 @@ void set_values(int has_file)
         percentage_suspend_threshold = 45;
         line_time_range[0] = 5;
         line_time_range[1] = 10;
+    }
+    for (int k = 0; k < 10; k++)
+    {
+        lines_working_times[k] = (rand()%(line_time_range[1] - 
+                        line_time_range[0]))+line_time_range[0];
     }
 }
