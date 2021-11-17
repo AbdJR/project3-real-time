@@ -50,7 +50,10 @@ extern int lines_working_times[10];
 extern int num_of_workers_in_line;
 //the mutexes that are needed to coordinate the work between workers in each line
 extern pthread_mutex_t line_mutex[10];
-
+//the number of laptop boxes in the storage room
+extern int num_of_boxes_in_storage_room;
+//mutext for the storage room
+extern pthread_mutex_t storage_room_mutex;
 int main(int argc, char *argv[])
 {
     int i, j, k, l; //dummy variablles for counting and iterating through loops
@@ -129,8 +132,7 @@ int main(int argc, char *argv[])
                         {
                             msg.mesg_text[i] = 0;
                         }
-                        msgsnd(q_id,&msg,sizeof(msg), IPC_NOWAIT);
-
+                        msgsnd(q_id, &msg, sizeof(msg), IPC_NOWAIT);
                     }
                     //finished the threads work
                     if (semop(sequential_semaphores[i % 5], &release, 1) < 0)
@@ -167,9 +169,65 @@ int main(int argc, char *argv[])
                     //now each process will read until one of them gets a message
                     do
                     {
-                        usleep(1000);
-                        
-                    }while(msgrcv(q_id,&r_msg,sizeof(r_msg),0,IPC_NOWAIT) == ENOMSG);
+                        if (msgrcv(q_id, &r_msg, sizeof(r_msg), i, IPC_NOWAIT) == ENOMSG)
+                        {
+                            usleep(1000);
+                        }
+                        //now we got a message from another line withing the last 5 lines
+                        else
+                        {
+                            r_msg.mesg_text[i] = 1;
+                            for (int j = 0; j < num_of_workers_in_line; j++)
+                            {
+                                int *index = malloc(sizeof(int));
+                                *index = i;
+                                if (pthread_create(&workers[j], NULL, &parallel_function, index) != 0)
+                                {
+                                    perror("Failed to create a Sequential line thread");
+                                }
+                            }
+                            for (int j = 0; j < num_of_workers_in_line; j++)
+                            {
+                                if (pthread_join(workers[j], NULL) != 0)
+                                {
+                                    perror("Failed to join a Sequential line thread");
+                                }
+                            }
+                            //check if we reached 5 Lines working on this laptop
+                            int should_continue = 0;
+                            for (int f = 0; f < 5; f++)
+                            {
+                                if (r_msg.mesg_text[f] == 0)
+                                {
+                                    should_continue = 1;
+                                    break;
+                                }
+                            }
+                            //now we will send it to the next process to process it
+                            if (should_continue)
+                            {
+                                for (int t = 0;; t = (t + 4 ^ i) % 5)
+                                {
+                                    if (r_msg.mesg_text[t] == 0)
+                                    {
+                                        r_msg.mesg_type = t;
+                                        msgsnd(q_id, &r_msg, sizeof(r_msg), IPC_NOWAIT);
+                                    }
+                                }
+                            }
+                            //what if we finally covered all the steps? we should send it to the storage man
+                            else
+                            {
+                                //we finally unveil the 6ths message type, the mailman type
+                                r_msg.mesg_type = 6;
+                                //won't send with non-blocking, i should wait for the storage carton to be empty again
+                                msgsnd(q_id, &r_msg, sizeof(r_msg), 0);
+                            }
+                        }
+
+                    } while (msgrcv(q_id, &r_msg, sizeof(r_msg), 0, IPC_NOWAIT) == ENOMSG);
+                    r_msg.mesg_text[i % 5] = 1;
+
                     for (int j = 0; j < num_of_workers_in_line; j++)
                     {
                         int *index = malloc(sizeof(int));
@@ -186,6 +244,10 @@ int main(int argc, char *argv[])
                             perror("Failed to join a Sequential line thread");
                         }
                     }
+                    //check this formula, it won't give the same value of i, never. Addded 5 in the end to not confuse  with msgtype 0 that is the main one
+                    //so we have message types : 0 (basic), 5,6,7,8,9
+                    r_msg.mesg_type = (i - 5 + time(NULL) % 4 + 1) % 5 + 5;
+                    msgsnd(q_id, &r_msg, sizeof(r_msg), IPC_NOWAIT);
                     // //finished the threads work
                     // if (semop(sequential_semaphores[i % 5], &release, 1) < 0)
                     // {
@@ -203,6 +265,33 @@ int main(int argc, char *argv[])
         }
         usleep(1000);
     }
+
+    //make as amny threads as there are loading employees + 1 for the storage worker
+    pthread_t employees[num_of_loading_employees + 1];
+    for (int j = 0; j < num_of_loading_employees + 1; j++)
+    {
+        int *index = malloc(sizeof(int));
+        *index = j;
+        if (j == 0)
+        {
+            if (pthread_create(&employees[j], NULL, &storage_worker_function, q_id) != 0)
+            {
+                perror("Failed to create a Storage Worker thread");
+            }
+        }
+        if (pthread_create(&employees[j], NULL, &loading_workers_function, q_id) != 0)
+        {
+            perror("Failed to create a truck loading employee thread");
+        }
+    }
+    for (int j = 0; j < num_of_loading_employees + 1; j++)
+    {
+        if (pthread_join(employees[j], NULL) != 0)
+        {
+            perror("Failed to join a storage working thread");
+        }
+    }
+
     for (i = 0; i < NUMBER_OF_LINES; i++)
     {
         waitpid(lines_pid[i], 0, 0);
@@ -220,7 +309,7 @@ void *sequential_function(void *arg)
     int index = *(int *)arg;
     // *(int*)arg = sum //indicator to how we can set the value in the argument
     pthread_mutex_lock(line_mutex + index);
-    usleep((lines_working_times[index] / num_of_workers_in_line) * 1000000);
+    usleep((lines_working_times[index] / num_of_workers_in_line) * 1000000 - (num_of_workers_in_line / INITIAL_WORKERS_IN_LINE) * 100000);
     pthread_mutex_unlock(line_mutex + index);
     free(arg);
 }
@@ -230,8 +319,60 @@ void *parallel_function(void *arg)
     int index = *(int *)arg;
     // *(int*)arg = sum //indicator to how we can set the value in the argument
     pthread_mutex_lock(line_mutex + index);
-    usleep((lines_working_times[index] / num_of_workers_in_line) * 1000000);
+    //the -100,000 is there so that we can see the processes being faster when the number of employees has increased
+    usleep((float)(lines_working_times[index] / (float)num_of_workers_in_line) * 1000000 - (num_of_workers_in_line / INITIAL_WORKERS_IN_LINE) * 100000);
     pthread_mutex_unlock(line_mutex + index);
+    free(arg);
+}
+void *storage_worker_function(void *arg)
+{
+    int q_id = *(int *)arg;
+    message r_msg;
+    int should_exit = 0;
+    int current_number_of_laptops = 0;
+    while (1)
+    {
+        msgrcv(q_id, &r_msg, sizeof(r_msg), 6, 0);
+        //start protocol check for exit
+        should_exit = 1;
+        for (int s = 0; s < 5; s++)
+        {
+            if (r_msg.mesg_text[s] == 1)
+            {
+                should_exit = 0;
+                break;
+            }
+            //if we received a message full of 0s then we should exit, but we can't just kill the thread, we beed to free the argument first
+        }
+        if (should_exit)
+        {
+            break;
+        }
+        current_number_of_laptops++;
+        if (current_number_of_laptops == 10)
+        {
+            sleep(carton_box_delivery_time);
+            current_number_of_laptops = 0;
+            pthread_mutex_lock(&storage_room_mutex);
+            num_of_boxes_in_storage_room++;
+            pthread_mutex_unlock(&storage_room_mutex);
+        }
+    }
+    free(arg);
+}
+//TODO Storage Room Workers Function, + add the trucks to the system
+void *loading_workers_function(void *arg)
+{
+    int q_id = *(int *)arg;
+    message r_msg;
+    int should_exit = 0;
+    int current_number_of_laptops = 0;
+    while (1)
+    {
+        pthread_mutex_lock(&storage_room_mutex);
+        num_of_boxes_in_storage_room++;
+        pthread_mutex_unlock(&storage_room_mutex);
+    }
     free(arg);
 }
 
@@ -264,6 +405,7 @@ void set_values(int has_file)
         line_time_range[0] = 5;
         line_time_range[1] = 10;
         num_of_workers_in_line = INITIAL_WORKERS_IN_LINE;
+        num_of_boxes_in_storage_room = 0;
     }
     for (int k = 0; k < 10; k++)
     {
@@ -275,4 +417,5 @@ void set_values(int has_file)
     {
         pthread_mutex_init(line_mutex + k, NULL);
     }
+    pthread_mutex_init(&storage_room_mutex, NULL);
 }

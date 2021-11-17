@@ -104,6 +104,10 @@ extern int num_of_workers_in_line;
 //the semaphores needed between the threads
 //the mutexes that are needed to coordinate the work between workers in each line
 extern pthread_mutex_t line_mutex[10];
+//the number of laptop boxes in the storage room
+extern int num_of_boxes_in_storage_room;
+//mutext for the storage room
+extern pthread_mutex_t storage_room_mutex;
 union semun
 {
   int val;
