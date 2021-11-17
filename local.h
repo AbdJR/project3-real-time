@@ -11,9 +11,9 @@
 #include <sys/shm.h>
 #include <wait.h>
 #include <signal.h>
+#include <pthread.h>  
 #include <errno.h>
 #include <sys/msg.h>
-#include <pthread.h>  
 
 #define NUMBER_OF_LINES 10                //number of Palestinian officers at each border
 #define INITIAL_WORKERS_IN_LINE 10           //ratio of Palestinians out of 100 of the passengers
@@ -108,6 +108,13 @@ extern pthread_mutex_t line_mutex[10];
 extern int num_of_boxes_in_storage_room;
 //mutext for the storage room
 extern pthread_mutex_t storage_room_mutex;
+//semaphores for sequential workers
+extern pthread_mutex_t sequential_mutexes[6];
+//condition variable
+extern pthread_cond_t cond_serial_to_random;
+//message queue
+extern int q_id;
+
 union semun
 {
   int val;
@@ -181,8 +188,12 @@ void handle_sigusr1(int);
 void free_all();
 //the function where the sequential workers will work
 void *sequential_function(void *);
+//main thread function for serial workers
+void* serial_workers_main_thread_function(void *);
+//main thread function for inordered workers
+void* unordered_workers_main_thread_function(void *);
 //the function where the parallel workers will work
-// void *parallel_function(void *);
+// void *unordered_function(void *);
 // passenger_t create_passenger(int);
 // officer_t create_officer();
 // crossing_point_t create_crossing_point(int, int, int *, int);

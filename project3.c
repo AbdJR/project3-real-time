@@ -181,7 +181,7 @@ int main(int argc, char *argv[])
                             {
                                 int *index = malloc(sizeof(int));
                                 *index = i;
-                                if (pthread_create(&workers[j], NULL, &parallel_function, index) != 0)
+                                if (pthread_create(&workers[j], NULL, &unordered_function, index) != 0)
                                 {
                                     perror("Failed to create a Sequential line thread");
                                 }
@@ -232,7 +232,7 @@ int main(int argc, char *argv[])
                     {
                         int *index = malloc(sizeof(int));
                         *index = i;
-                        if (pthread_create(&workers[j], NULL, &parallel_function, index) != 0)
+                        if (pthread_create(&workers[j], NULL, &unordered_function, index) != 0)
                         {
                             perror("Failed to create a Sequential line thread");
                         }
@@ -314,7 +314,7 @@ void *sequential_function(void *arg)
     free(arg);
 }
 
-void *parallel_function(void *arg)
+void *unordered_function(void *arg)
 {
     int index = *(int *)arg;
     // *(int*)arg = sum //indicator to how we can set the value in the argument
