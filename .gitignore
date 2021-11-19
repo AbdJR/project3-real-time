@@ -51,4 +51,4 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-project3a.c
+# project3a.c
