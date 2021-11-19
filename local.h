@@ -114,6 +114,8 @@ extern pthread_mutex_t sequential_mutexes[6];
 extern pthread_cond_t cond_serial_to_random;
 //message queue
 extern int q_id;
+//the 10 main threads 
+extern pthread_t main_threads[NUMBER_OF_LINES];
 
 union semun
 {
@@ -192,6 +194,10 @@ void *sequential_function(void *);
 void* serial_workers_main_thread_function(void *);
 //main thread function for inordered workers
 void* unordered_workers_main_thread_function(void *);
+//storage worker
+void *storage_worker_function(void *);
+//loading worker
+void *loading_workers_function(void *);
 //the function where the parallel workers will work
 // void *unordered_function(void *);
 // passenger_t create_passenger(int);
