@@ -54,7 +54,9 @@ enum
 };
 
 //the time needed by the storage employee to go to storage room and come back
-extern int carton_box_delivery_time;  
+extern int carton_box_delivery_time;
+//the time needed by the storage workers to fill one box in the truck
+extern int storage_truck_filling_time;  
 //the threshold where the storage area will stop accepting more boxes
 extern int storage_area_max_threshold;    
 //the threshold where the storage area will start accepting boxes
@@ -110,12 +112,24 @@ extern int num_of_boxes_in_storage_room;
 extern pthread_mutex_t storage_room_mutex;
 //semaphores for sequential workers
 extern pthread_mutex_t sequential_mutexes[6];
+//semaphores for condition signals
+extern pthread_mutex_t conditional_mutexes[6];
+//condition variables for sequential workers
+extern pthread_cond_t sequential_cond[6];
 //condition variable
 extern pthread_cond_t cond_serial_to_random;
 //message queue
 extern int q_id;
 //the 10 main threads 
 extern pthread_t main_threads[NUMBER_OF_LINES];
+//the condition for storage workers to start working
+extern pthread_cond_t storage_workers_cond;
+//the mutex for the storage workers to start working
+extern pthread_mutex_t storage_workers_mutex;
+//the condition for box workers to start working
+extern pthread_cond_t box_worker_cond;
+//the mutex for the box workers to start working
+extern pthread_mutex_t box_worker_mutex;
 
 union semun
 {
@@ -198,6 +212,8 @@ void* unordered_workers_main_thread_function(void *);
 void *storage_worker_function(void *);
 //loading worker
 void *loading_workers_function(void *);
+//the function that organizes the storage workers
+void *loading_workers_main_function(void *);
 //the function where the parallel workers will work
 // void *unordered_function(void *);
 // passenger_t create_passenger(int);
