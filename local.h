@@ -130,6 +130,24 @@ extern pthread_mutex_t storage_workers_mutex;
 extern pthread_cond_t box_worker_cond;
 //the mutex for the box workers to start working
 extern pthread_mutex_t box_worker_mutex;
+//now making variable sized condition variables array for trucks
+extern pthread_cond_t *trucks_cond;
+//the mutex for the box workers to start working
+extern pthread_mutex_t *trucks_mutex;
+//the number of boxes inside the current truck
+extern int current_num_of_boxes_inside_current_truck;
+//the condition variable that tells the loading workers that there is a truck to fill
+extern pthread_cond_t fill_boxes_in_truck_cond;
+//the mutex for the condition variable that tells storage workers which truch to fill
+extern pthread_mutex_t fill_boxes_in_truck_mutex;
+//the lock for which truck should we be filling
+extern pthread_mutex_t current_filling_truck;
+//the condition variable that tells the loading workers that there is a truck to fill
+extern pthread_cond_t is_there_a_truck_cond;
+//the mutex for the condition variable that tells storage workers which truch to fill
+extern pthread_mutex_t is_there_a_truck_mutex;
+//the mutex for calculating the profit
+extern pthread_mutex_t profit_mutex;
 
 union semun
 {
@@ -137,49 +155,6 @@ union semun
   struct semid_ds *buf;
   ushort *array;
 };
-
-
-
-// typedef struct passenger_t
-// {
-//   int pid;
-//   unsigned char nationality;         //Palestinian 0, Jordanian 1, Foreign 3+
-//   unsigned short has_passport;       //to check wether we have the passports or not
-//   unsigned short expiray_date_day;   //at which day does the current passport expire, only short required for all fields here
-//   unsigned short expiray_date_month; //at which month does the current passport expire
-//   unsigned short expiray_date_year;  //at which year does the current passport expire
-//   // unsigned int passport_id;       //the id of this specific passoport
-//   unsigned short tolerance; //for how long can this person wait in line
-//   //used for stopping the officers when hall gets filled later
-//   unsigned short my_officer;
-// } passenger_t;
-
-// typedef struct officer_t
-// {
-//   unsigned short processing_time; //the amount of time taken by officer to handle passengers
-//   unsigned short type;            //which crossing point does this officer work at (PAL/JOR or FRN)
-//   unsigned short crossing_point;  //at which crossing point will this officer serve at
-// } officer_t;
-
-// typedef struct crossing_point_t
-// {
-//   struct officer_t officers[OFFICERS_IN_BORDER]; //We have NUM_OF_OFFICERS amount of Palestinian officers in each border
-//   unsigned short type;                           //type of crossing point (PAL/JOR or FRN)
-// } crossing_point_t;
-
-// typedef struct bus_t
-// {
-//   unsigned short max_capacity;    //how many passengers can the bus handle each trip
-//   unsigned short trip_time;       //the time it takes to go to the jordanian side and come back
-//   unsigned int num_of_passengers; //current number of passengers
-// } bus_t;
-
-// typedef struct hall_t
-// {
-//   unsigned int max_threshold; //how much can we have in the hall before stopping operations
-//   unsigned int min_threshold; //if we reached the max, how much do we have to have in order to resume operations
-
-// } hall_t;
 
 typedef struct mesg_buffer
 {
@@ -189,23 +164,15 @@ typedef struct mesg_buffer
 
 struct sembuf acquire = {0, -1, SEM_UNDO},
               release = {0, 1, SEM_UNDO};
-//               acquire_all = {0, -1 * TOTAL_ENTITIES, SEM_UNDO},
-//               release_all = {0, TOTAL_ENTITIES, SEM_UNDO};
-
-// extern passenger_t *PASSENGERS;
-// extern officer_t *OFFICERS;
-// extern crossing_point_t *CROSSING_POINTS;
-// extern bus_t *BUSSES;
-// extern hall_t HALL;
 
 // set the values for each of the variables 
 void set_values(int);
-void handle_sigusr1(int);
-void free_all();
 //the function where the sequential workers will work
 void *sequential_function(void *);
 //main thread function for serial workers
 void* serial_workers_main_thread_function(void *);
+//function for unordered workers
+void* unordered_function(void *);
 //main thread function for inordered workers
 void* unordered_workers_main_thread_function(void *);
 //storage worker
@@ -214,21 +181,6 @@ void *storage_worker_function(void *);
 void *loading_workers_function(void *);
 //the function that organizes the storage workers
 void *loading_workers_main_function(void *);
-//the function where the parallel workers will work
-// void *unordered_function(void *);
-// passenger_t create_passenger(int);
-// officer_t create_officer();
-// crossing_point_t create_crossing_point(int, int, int *, int);
-// void initialise_semaphores(key_t, union semun, ushort);
-// bus_t create_bus(int);
-// char *get_info(int);
-// int find_length(char *);
-// //set the current date for officers to know how to check
-// void set_date();
-// void sit_in_hall(passenger_t, int, int *, int *, int *, int *, int);
-// void go_to_bus(passenger_t, int, int *, int *, int[]);
-// void increment_pass(int, int *);
-// void increment_reject(int, int *);
-// void increment_return(int, int *);
-// int kill_the_process(int, int, int);
+//the function that handles truck threads
+void* trucks_function(void*);
 #endif
