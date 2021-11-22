@@ -41,18 +41,6 @@
 
 #define none "\033[0m" /* to flush the previous property */
 
-enum
-{
-  PAL,
-  JOR,
-  FRN
-};
-enum
-{
-  TRUE,
-  FALSE
-};
-
 //the time needed by the storage employee to go to storage room and come back
 extern int carton_box_delivery_time;
 //the time needed by the storage workers to fill one box in the truck
@@ -103,11 +91,15 @@ extern int line_time_range[2];
 extern int lines_working_times[10];
 //the number of workers to work in each line
 extern int num_of_workers_in_line;
+//the number of laptop boxes in the storage room
+extern int num_of_boxes_in_storage_room;
+//message queue
+extern int q_id;
+//the number of boxes inside the current truck
+extern int current_num_of_boxes_inside_current_truck;
 //the semaphores needed between the threads
 //the mutexes that are needed to coordinate the work between workers in each line
 extern pthread_mutex_t line_mutex[10];
-//the number of laptop boxes in the storage room
-extern int num_of_boxes_in_storage_room;
 //mutext for the storage room
 extern pthread_mutex_t storage_room_mutex;
 //semaphores for sequential workers
@@ -118,8 +110,6 @@ extern pthread_mutex_t conditional_mutexes[6];
 extern pthread_cond_t sequential_cond[6];
 //condition variable
 extern pthread_cond_t cond_serial_to_random;
-//message queue
-extern int q_id;
 //the 10 main threads 
 extern pthread_t main_threads[NUMBER_OF_LINES];
 //the condition for storage workers to start working
@@ -134,8 +124,6 @@ extern pthread_mutex_t box_worker_mutex;
 extern pthread_cond_t *trucks_cond;
 //the mutex for the box workers to start working
 extern pthread_mutex_t *trucks_mutex;
-//the number of boxes inside the current truck
-extern int current_num_of_boxes_inside_current_truck;
 //the condition variable that tells the loading workers that there is a truck to fill
 extern pthread_cond_t fill_boxes_in_truck_cond;
 //the mutex for the condition variable that tells storage workers which truch to fill
@@ -148,22 +136,20 @@ extern pthread_cond_t is_there_a_truck_cond;
 extern pthread_mutex_t is_there_a_truck_mutex;
 //the mutex for calculating the profit
 extern pthread_mutex_t profit_mutex;
-
-union semun
-{
-  int val;
-  struct semid_ds *buf;
-  ushort *array;
-};
+//the mutex for the condition variable for the HR
+extern pthread_mutex_t hr_mutex;
+//the condition variable for the HR
+extern pthread_cond_t hr_cond;
+//the mutex for the condition variable for the ceo
+extern pthread_mutex_t ceo_mutex;
+//the condition variable for the ceo
+extern pthread_cond_t ceo_cond;
 
 typedef struct mesg_buffer
 {
   long mesg_type;
   int mesg_text[5];
 } message;
-
-struct sembuf acquire = {0, -1, SEM_UNDO},
-              release = {0, 1, SEM_UNDO};
 
 // set the values for each of the variables 
 void set_values(int);
@@ -183,4 +169,9 @@ void *loading_workers_function(void *);
 void *loading_workers_main_function(void *);
 //the function that handles truck threads
 void* trucks_function(void*);
+//the function for the HR
+void* hr_function(void*);
+//the function for the ceo
+void* ceo_function(void*);
+
 #endif

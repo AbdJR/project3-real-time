@@ -50,10 +50,16 @@ int line_time_range[2];
 int lines_working_times[10];
 //the number of workers to work in each line
 int num_of_workers_in_line;
-//the mutexes that are needed to coordinate the work between workers in each line
-pthread_mutex_t line_mutex[10];
 //the number of laptop boxes in the storage room
 int num_of_boxes_in_storage_room;
+//message queue
+int q_id;
+//for line 4 to make sure the other lines can still handle more laptops
+int wait_line_4;
+//the number of boxes inside the current truck
+int current_num_of_boxes_inside_current_truck;
+//the mutexes that are needed to coordinate the work between workers in each line
+pthread_mutex_t line_mutex[10];
 //mutext for the storage room
 pthread_mutex_t storage_room_mutex;
 //semaphores for sequential workers
@@ -64,12 +70,8 @@ pthread_mutex_t conditional_mutexes[6];
 pthread_cond_t sequential_cond[6];
 //condition variable
 pthread_cond_t cond_serial_to_random;
-//message queue
-int q_id;
 //the 10 main threads
 pthread_t main_threads[NUMBER_OF_LINES];
-//for line 4 to make sure the other lines can still handle more laptops
-int wait_line_4;
 //the condition for storage workers to start working
 pthread_cond_t storage_workers_cond = PTHREAD_COND_INITIALIZER;
 //the mutex for the storage workers to start working
@@ -82,8 +84,6 @@ pthread_mutex_t box_worker_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t *trucks_cond;
 //the mutex for the box workers to start working
 pthread_mutex_t *trucks_mutex;
-//the number of boxes inside the current truck
-int current_num_of_boxes_inside_current_truck;
 //the condition variable that tells the loading workers that there is a truck to fill
 pthread_cond_t fill_boxes_in_truck_cond = PTHREAD_COND_INITIALIZER;
 //the mutex for the condition variable that tells storage workers which truch to fill
@@ -96,7 +96,16 @@ pthread_cond_t is_there_a_truck_cond = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t is_there_a_truck_mutex = PTHREAD_MUTEX_INITIALIZER;
 //the mutex for calculating the profit
 pthread_mutex_t profit_mutex = PTHREAD_MUTEX_INITIALIZER;
+//the mutex for the condition variable for the HR
+pthread_mutex_t hr_mutex = PTHREAD_MUTEX_INITIALIZER;
+//the condition variable for the HR
+pthread_cond_t hr_cond = PTHREAD_COND_INITIALIZER;
+//the mutex for the condition variable for the ceo
+pthread_mutex_t ceo_mutex = PTHREAD_MUTEX_INITIALIZER;
+//the condition variable for the ceo
+pthread_cond_t ceo_cond = PTHREAD_COND_INITIALIZER;
 
+//TODO Figure Out How To Print Everything on the same page and not create inifinte number of lines
 int main(int argc, char *argv[])
 {
     // int i, j, k, l; //dummy variablles for counting and iterating through loops
@@ -159,6 +168,16 @@ int main(int argc, char *argv[])
             perror("Failed to create a Storage Worker thread");
         }
     }
+    //*creating the HR and the CEO
+    pthread_t hr_and_ceo_threads[2];
+    if (pthread_create(&hr_and_ceo_threads[0], NULL, &hr_function, NULL) != 0)
+    {
+        perror("Failed to create a Storage Worker thread");
+    }
+    if (pthread_create(&hr_and_ceo_threads[1], NULL, &ceo_function, NULL) != 0)
+    {
+        perror("Failed to create a Storage Worker thread");
+    }
 
     //*JOINING
     //loading employees and storage workers
@@ -187,17 +206,61 @@ int main(int argc, char *argv[])
             perror("Failed to join a Truck thread");
         }
     }
-
+    //joining the hr and ceo
+    for (int j = 0; j < 2; j++)
+    {
+        printf("waiting for HR // CEO %d to join\n", j);
+        if (pthread_join(hr_and_ceo_threads[j], NULL) != 0)
+        {
+            perror("Failed to join an HR // CEO thread");
+        }
+    }
+    //*Destroying Mutexesand Conditions
     for (int k = 0; k < 10; k++)
     {
+        if(k == 0)
+        {
+            //mutexes
+            pthread_mutex_destroy(&storage_workers_mutex);
+            pthread_mutex_destroy(&box_worker_mutex);
+            pthread_mutex_destroy(&(*trucks_mutex));
+            pthread_mutex_destroy(&fill_boxes_in_truck_mutex);
+            pthread_mutex_destroy(&current_filling_truck);
+            pthread_mutex_destroy(&is_there_a_truck_mutex);
+            pthread_mutex_destroy(&profit_mutex);
+            pthread_mutex_destroy(&hr_mutex);
+            pthread_mutex_destroy(&ceo_mutex);
+            pthread_mutex_destroy(&storage_room_mutex);
+            //condition variables
+            pthread_cond_destroy(&cond_serial_to_random);
+            pthread_cond_destroy(&storage_workers_cond);
+            pthread_cond_destroy(&box_worker_cond);
+            pthread_cond_destroy(&(*trucks_cond));
+            pthread_cond_destroy(&fill_boxes_in_truck_cond);
+            pthread_cond_destroy(&is_there_a_truck_cond);
+            pthread_cond_destroy(&hr_cond);
+            pthread_cond_destroy(&ceo_cond);
+        }
+        if(k < 6)
+        {
+            //mutexes
+            pthread_mutex_destroy(&sequential_mutexes[k]);
+            pthread_mutex_destroy(&conditional_mutexes[k]);
+            //condition variables
+            pthread_cond_destroy(&sequential_cond[k]);
+            
+        }
+        //mutexes
         pthread_mutex_destroy(&line_mutex[k]);
+        //conditional variables
     }
-    pthread_cond_destroy(&cond_serial_to_random);
+
     free(trucks_cond);
     free(trucks_mutex);
     free(q_id_m);
     return 0;
 }
+
 void *serial_workers_main_thread_function(void *arg)
 {
     int i = *(int *)arg;
@@ -403,10 +466,8 @@ void *unordered_function(void *arg)
     // printf("an unordered worker ending %d  \n",index);
 }
 
-// TODO Try to Add more than one storage room employee, + add the trucks to the system
 void *loading_workers_main_function(void *arg)
 {
-    int which_truck_to_load = 0;
     while (1)
     {
         pthread_mutex_lock(&storage_workers_mutex);
@@ -417,12 +478,12 @@ void *loading_workers_main_function(void *arg)
         */
         //so we need to lock and unlock properly becauuse unlocking an unlocked mutex will cause undefined behaviour (see the manual)
         pthread_cond_wait(&storage_workers_cond, &storage_workers_mutex);
-        int *load_truck =
-            printf("Got the Signal, Lets Get Those Trucks Fillin Up Boys!!\n\n\n");
+        // int *load_truck =
+        printf("Got the Signal, Lets Get Those Trucks Fillin Up Boys!!\n\n\n");
         pthread_t employees[num_of_loading_employees];
         for (int j = 0; j < num_of_loading_employees; j++)
         {
-            if (pthread_create(&employees[j], NULL, &loading_workers_function, arg) != 0)
+            if (pthread_create(&employees[j], NULL, &loading_workers_function, NULL) != 0)
             {
                 perror("Failed to create a Storage Filler thread");
             }
@@ -441,22 +502,25 @@ void *loading_workers_main_function(void *arg)
 
 void *loading_workers_function(void *arg)
 {
-    int q_id = *(int *)arg;
-    message r_msg;
+    //TODO Utilise this Variable
     int should_exit = 0;
-    int current_number_of_laptops = 0;
     // printf("loading worker fucntion\n");
     while (1)
     {
         pthread_mutex_lock(&storage_room_mutex);
+        // printf("[loading_workers_function] Acquired the storage room mutex %d\n",current_num_of_boxes_inside_current_truck);
         pthread_mutex_lock(&is_there_a_truck_mutex);
+        // printf("[loading_workers_function] Acquired the is there a truck mutex %d\n",current_num_of_boxes_inside_current_truck);
         usleep((long)((float)storage_truck_filling_time / (float)num_of_loading_employees) * 1000000);
         num_of_boxes_in_storage_room--;
+        // printf("[loading_workers_function] taking boxes from the storage room, there remains %d \tboxes\n",num_of_boxes_in_storage_room);
         pthread_mutex_lock(&fill_boxes_in_truck_mutex);
         current_num_of_boxes_inside_current_truck++;
+        // printf("[loading_workers_function] Filling the truck,Also Acquired the fill boxes in truch mutex current capacity inside the truck is %d\n",current_num_of_boxes_inside_current_truck);
         if (current_num_of_boxes_inside_current_truck == truck_capacity)
         {
             pthread_mutex_unlock(&fill_boxes_in_truck_mutex);
+            // printf("[loading_workers_function] The Truck IS Full, lets send him a signal%d\n",current_num_of_boxes_inside_current_truck);
             pthread_cond_signal(&fill_boxes_in_truck_cond);
             //now wait till there is a truck that we can fill
             pthread_cond_wait(&is_there_a_truck_cond, &is_there_a_truck_mutex);
@@ -464,20 +528,25 @@ void *loading_workers_function(void *arg)
         else
         {
             pthread_mutex_unlock(&fill_boxes_in_truck_mutex);
+            // printf("[loading_workers_function] Unlocked the Fill Box in Truck Mutex, now anyone else can fill boxes in the truck\n");
         }
         if (num_of_boxes_in_storage_room == storage_area_min_threshold)
         {
             pthread_cond_signal(&box_worker_cond);
         }
-        if (num_of_boxes_in_storage_room <= storage_area_min_threshold / 10)
+        if (num_of_boxes_in_storage_room <= num_of_loading_employees)
         {
+            pthread_mutex_unlock(&is_there_a_truck_mutex);
             pthread_mutex_unlock(&storage_room_mutex);
             break;
         }
         pthread_mutex_unlock(&is_there_a_truck_mutex);
+        // printf("[loading_workers_function] Unlocked the is there a truck mutex\n");
         pthread_mutex_unlock(&storage_room_mutex);
+        // printf("[loading_workers_function] Unlocked the storage room mutex\n");
     }
-    free(arg);
+    // printf("Broke out of the loop since there are not many boxes left, i'm free again\n");
+    // free(arg);
 }
 
 void *storage_worker_function(void *arg)
@@ -487,12 +556,14 @@ void *storage_worker_function(void *arg)
     int should_exit = 0;
     int current_number_of_laptops = 0;
     int should_wait = 0;
+    int print = 0;
     // printf("Storage worker fucntion\n");
     while (1)
     {
         // printf("in storage room waiting\n");
         msgrcv(q_id, &r_msg, sizeof(r_msg), 10, 0);
-        printf("RECEIVED THE MESSAGE !!!!!!!!\n\n\n");
+        if (print++ % 5 == 0)
+            printf("[storage_worker_function] RECEIVED THE MESSAGE !!!!!!!!\n\n\n");
         //start protocol check for exit
         should_exit = 1;
         for (int s = 0; s < 5; s++)
@@ -529,18 +600,19 @@ void *storage_worker_function(void *arg)
             current_number_of_laptops = 0;
             pthread_mutex_lock(&storage_room_mutex);
             num_of_boxes_in_storage_room++;
-            printf("\t\tnumber of boxes in storage room is %d\n\t\t\tYes\t\n\n", num_of_boxes_in_storage_room);
+            printf("[storage_worker_function] \t\tnumber of boxes in storage room is %d\n\n", num_of_boxes_in_storage_room);
             if (num_of_boxes_in_storage_room >= storage_area_max_threshold - NUMBER_OF_LINES)
             {
                 should_wait = 1;
                 //we only need to signal one time, the rest of the times we want to wait
-                //! double free or corruption (fasttop) Check This Error!!
+                //* double free or corruption (fasttop) Check This Error!!
+                //* Figured the message out, it occurs when we free a variable more than one time. Had to remanage where each dynamically allocated variable is being freed
                 if (num_of_boxes_in_storage_room == storage_area_max_threshold - NUMBER_OF_LINES)
                 {
                     pthread_cond_signal(&storage_workers_cond);
                 }
             }
-            else if (num_of_boxes_in_storage_room >= truck_capacity)
+            else if (num_of_boxes_in_storage_room >= truck_capacity + 2)
             {
                 pthread_cond_signal(&storage_workers_cond);
             }
@@ -560,17 +632,82 @@ void *trucks_function(void *arg)
         pthread_mutex_lock(&fill_boxes_in_truck_mutex);
         if (current_num_of_boxes_inside_current_truck != truck_capacity)
         {
+            printf("[trucks_function] waiting for boxes to be filled\n");
             pthread_cond_wait(&fill_boxes_in_truck_cond, &fill_boxes_in_truck_mutex);
+            printf("[trucks_function] THE BOXES ARE FILLED IN THE TRUCK, LETS GET GOING\n");
         }
         current_num_of_boxes_inside_current_truck = 0;
         pthread_mutex_unlock(&fill_boxes_in_truck_mutex);
         pthread_mutex_unlock(&current_filling_truck);
         sleep(truck_trip_time);
+        // pthread_mutex_lock(&profit_mutex);
+        // factory_profit += truck_capacity * 10 * (laptop_selling_cost - laptop_manufacturing_cost) -
+        //                   (salary_hr + salary_ceo + NUMBER_OF_LINES * num_of_workers_in_line * salaray_technical + NUMBER_OF_LINES * salary_storage +
+        //                    num_of_loading_employees * salary_loading + salary_extra + salary_drivers);
+        // printf("[trucks_function] The Current Profit for this round is %d\n", factory_profit);
+        // pthread_mutex_unlock(&profit_mutex);
+        pthread_cond_signal(&hr_cond);
+    }
+    free(arg);
+}
+
+void *hr_function(void *arg)
+{
+    // int num_of_sent_truck = 0;
+    while (1)
+    {
+        pthread_mutex_lock(&hr_mutex);
+        pthread_cond_wait(&hr_cond, &hr_mutex);
+        // num_of_sent_truck++;
+        pthread_mutex_unlock(&hr_mutex);
+        //* now calculating the profit that is calculated once every successful truck delivery
+        // num_of_sent_truck = 0;
         pthread_mutex_lock(&profit_mutex);
         factory_profit += truck_capacity * 10 * (laptop_selling_cost - laptop_manufacturing_cost) -
                           (salary_hr + salary_ceo + NUMBER_OF_LINES * num_of_workers_in_line * salaray_technical + NUMBER_OF_LINES * salary_storage +
                            num_of_loading_employees * salary_loading + salary_extra + salary_drivers);
-        printf("The Current Profit for this round is %d\n", factory_profit);
+        printf("[hr_function] The Total Profit is %d\n", factory_profit);
+        if (factory_profit >= profit_max_threshold || factory_profit <= profit_min_threshold || factory_profit >= max_gain_threshold)
+        {
+            pthread_cond_signal(&ceo_cond);
+        }
+        pthread_mutex_unlock(&profit_mutex);
+    }
+    free(arg);
+}
+
+void *ceo_function(void *arg)
+{
+    //so we can see if we suspended more than a certain barrier
+    int number_of_suspended = 0;
+    while (1)
+    {
+        pthread_mutex_lock(&ceo_mutex);
+        pthread_cond_wait(&ceo_cond, &ceo_mutex);
+        pthread_mutex_unlock(&ceo_mutex);
+
+        //* now checking why we were called
+        //TODO Think whether we should keep the mutex in here
+        pthread_mutex_lock(&profit_mutex);
+        if (factory_profit >= max_gain_threshold)
+        {
+            //TODO end everything with a success
+        }
+        else if (factory_profit >= profit_max_threshold)
+        {
+            printf("[ceo_function] The Total Profit now is %d,which is above %d, so we are going to increase the number of workers by 1 on all Lines\n", factory_profit, profit_max_threshold);
+            num_of_workers_in_line++;
+        }
+        else if (factory_profit <= profit_min_threshold)
+        {
+            printf("[ceo_function] Unfortunately, The Total Profit now is %d, which is below %d, so we are going to SUSPEND one worker from each line\n", factory_profit, profit_min_threshold);
+            num_of_workers_in_line--;
+            number_of_suspended++;
+            if (((float)number_of_suspended / (float)INITIAL_WORKERS_IN_LINE) >= ((float)percentage_suspend_threshold / 100.0))
+            {
+                //TODO end everything with a depressing failure
+            }
+        }
         pthread_mutex_unlock(&profit_mutex);
     }
     free(arg);
@@ -585,7 +722,7 @@ void set_values(int has_file)
         storage_area_min_threshold = 140;
         num_of_trucks = 4;
         num_of_loading_employees = 10;
-        truck_capacity = 20;
+        truck_capacity = 40;
         truck_trip_time = 7;
         salary_ceo = 2000;
         salary_hr = 1500;
@@ -594,14 +731,14 @@ void set_values(int has_file)
         salary_loading = 900;
         salary_drivers = 1000;
         salary_extra = 800;
-        laptop_manufacturing_cost = 250;
-        laptop_selling_cost = 375;
+        laptop_manufacturing_cost = 150;
+        laptop_selling_cost = 525;
         factory_profit = 0;
         profit_min_threshold = -1000;
         profit_max_threshold = 5000;
         max_gain_threshold = 20000;
         carton_box_delivery_time = 1;
-        storage_truck_filling_time = 3;
+        storage_truck_filling_time = 1;
         percentage_suspend_threshold = 45;
         line_time_range[0] = 1;
         line_time_range[1] = 2;
@@ -621,8 +758,6 @@ void set_values(int has_file)
     }
     pthread_mutex_init(&storage_room_mutex, NULL);
     pthread_cond_init(&cond_serial_to_random, NULL);
-    union semun seq_un;
-    seq_un.val = 1;
     for (int i = 0; i < 6; i++)
     {
         if (pthread_mutex_init(&sequential_mutexes[i], NULL) < 0)
