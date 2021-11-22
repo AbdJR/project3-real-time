@@ -695,6 +695,7 @@ void *ceo_function(void *arg)
         }
         else if (factory_profit >= profit_max_threshold)
         {
+            //! ERROR, Segmentation Fault, it seems we need to aquire all mutexes before doing so
             printf("[ceo_function] The Total Profit now is %d,which is above %d, so we are going to increase the number of workers by 1 on all Lines\n", factory_profit, profit_max_threshold);
             num_of_workers_in_line++;
         }
