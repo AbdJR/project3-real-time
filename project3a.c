@@ -48,7 +48,7 @@ int percentage_suspend_threshold;
 int line_time_range[2];
 //the random time for each line
 int lines_working_times[10];
-//the number of workers to work in each line
+//the number of workers to work in each sequential line
 int num_of_workers_in_line;
 //the number of laptop boxes in the storage room
 int num_of_boxes_in_storage_room;
@@ -104,7 +104,6 @@ pthread_cond_t hr_cond = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t ceo_mutex = PTHREAD_MUTEX_INITIALIZER;
 //the condition variable for the ceo
 pthread_cond_t ceo_cond = PTHREAD_COND_INITIALIZER;
-
 //TODO Figure Out How To Print Everything on the same page and not create inifinte number of lines
 int main(int argc, char *argv[])
 {
@@ -218,7 +217,7 @@ int main(int argc, char *argv[])
     //*Destroying Mutexesand Conditions
     for (int k = 0; k < 10; k++)
     {
-        if(k == 0)
+        if (k == 0)
         {
             //mutexes
             pthread_mutex_destroy(&storage_workers_mutex);
@@ -241,14 +240,13 @@ int main(int argc, char *argv[])
             pthread_cond_destroy(&hr_cond);
             pthread_cond_destroy(&ceo_cond);
         }
-        if(k < 6)
+        if (k < 6)
         {
             //mutexes
             pthread_mutex_destroy(&sequential_mutexes[k]);
             pthread_mutex_destroy(&conditional_mutexes[k]);
             //condition variables
             pthread_cond_destroy(&sequential_cond[k]);
-            
         }
         //mutexes
         pthread_mutex_destroy(&line_mutex[k]);
@@ -264,23 +262,27 @@ int main(int argc, char *argv[])
 void *serial_workers_main_thread_function(void *arg)
 {
     int i = *(int *)arg;
+    //converting num_of_workers_in_line to a local variable
+    int lnum_of_workers_in_line = num_of_workers_in_line;
     while (1)
     {
-        pthread_t workers[num_of_workers_in_line];
+        if (lnum_of_workers_in_line != num_of_workers_in_line)
+        {
+            lnum_of_workers_in_line = num_of_workers_in_line;
+        }
+        pthread_t workers[lnum_of_workers_in_line];
         if (pthread_mutex_lock(&(sequential_mutexes[(i + 1)])) < 0)
         {
             perror("mutex lcok");
             exit(9);
         }
-        // printf("serial worker %d ,but now is acquiring lock %d\n", i,i);
         if (pthread_mutex_lock(&(sequential_mutexes[i])) < 0)
         {
             perror("mutex lock");
             exit(9);
         }
         //working with the threads now
-        // printf("Now that it is my turn, i (%d) will begin working on the laptop \n",i);
-        for (int j = 0; j < num_of_workers_in_line; j++)
+        for (int j = 0; j < sizeof(workers)/sizeof(pthread_t); j++)
         {
             int *index = malloc(sizeof(int));
             *index = i;
@@ -289,13 +291,14 @@ void *serial_workers_main_thread_function(void *arg)
                 perror("Failed to create a Sequential line thread");
             }
         }
-        for (int j = 0; j < num_of_workers_in_line; j++)
+        for (int j = 0; j < sizeof(workers)/sizeof(pthread_t); j++)
         {
             if (pthread_join((workers[j]), NULL) != 0)
             {
                 perror("Failed to join a Sequential line thread");
             }
         }
+
         //finished the threads work
         if (pthread_mutex_unlock(&(sequential_mutexes[i])) < 0)
         {
@@ -331,10 +334,10 @@ void *sequential_function(void *arg)
     int index = *(int *)arg;
     // *(int*)arg = sum //indicator to how we can set the value in the argument
     pthread_mutex_lock((line_mutex + index));
-    double time = ((double)lines_working_times[index] / (double)num_of_workers_in_line) * 100000 - (num_of_workers_in_line / (INITIAL_WORKERS_IN_LINE + 1)) * 100000;
+    double time = ((double)lines_working_times[index] / (double)num_of_workers_in_line) * 100000 -
+                  (num_of_workers_in_line * 100000 * lines_working_times[index] - INITIAL_WORKERS_IN_LINE * 100000 * lines_working_times[index]);
     // printf("a sequential worker (%d) working, I have a working time of %lf, and total is %ld\n",index,time,(lines_working_times[index]*1000000));
     usleep(time);
-    // printf("a sequential fINISHEDd worker (%d) working, we all have a working time of %d\n",index,lines_working_times[index]);
     pthread_mutex_unlock((line_mutex + index));
     free(arg);
 }
@@ -342,15 +345,29 @@ void *sequential_function(void *arg)
 void *unordered_workers_main_thread_function(void *arg)
 {
     int i = *(int *)arg;
+    //converting this to a local variable
+    int lnum_of_workers_in_line = num_of_workers_in_line;
     while (1)
     {
-        pthread_t workers[num_of_workers_in_line];
+        if (lnum_of_workers_in_line != num_of_workers_in_line)
+        {
+            lnum_of_workers_in_line = num_of_workers_in_line;
+        }
+
+        pthread_t workers[lnum_of_workers_in_line];
+
         //working with the threads now
         message r_msg;
         // int is_locked;
         //now each process will read until one of them gets a message
         do
         {
+            message r_msg;
+            if (lnum_of_workers_in_line != num_of_workers_in_line)
+            {
+                lnum_of_workers_in_line = num_of_workers_in_line;
+            }
+            // pthread_t workers[lnum_of_workers_in_line];
             int err = msgrcv(q_id, &r_msg, sizeof(r_msg), i, IPC_NOWAIT);
             if (err == -1)
             {
@@ -362,16 +379,17 @@ void *unordered_workers_main_thread_function(void *arg)
             {
                 r_msg.mesg_text[i % 5] = 1;
 
-                for (int j = 0; j < num_of_workers_in_line; j++)
+                for (int j = 0; j < sizeof(workers)/sizeof(pthread_t); j++)
                 {
                     int *index = malloc(sizeof(int));
                     *index = i;
                     if (pthread_create(&(workers[j]), NULL, &unordered_function, index) != 0)
                     {
+
                         perror("Failed to create a Sequential line thread");
                     }
                 }
-                for (int j = 0; j < num_of_workers_in_line; j++)
+                for (int j = 0; j < sizeof(workers)/sizeof(pthread_t); j++)
                 {
                     if (pthread_join((workers[j]), NULL) != 0)
                     {
@@ -413,18 +431,20 @@ void *unordered_workers_main_thread_function(void *arg)
                     //won't send with non-blocking, i should wait for the storage carton to be empty again
                     msgsnd(q_id, &r_msg, sizeof(r_msg), 0);
                 }
-                message r_msg;
-                pthread_t workers[num_of_workers_in_line];
             }
         } while (pthread_mutex_trylock(&(sequential_mutexes[5])) != 0);
-
+        if (lnum_of_workers_in_line != num_of_workers_in_line)
+        {
+            lnum_of_workers_in_line = num_of_workers_in_line;
+        }
         for (int r = 0; r < 5; r++)
         {
             r_msg.mesg_text[r] = 0;
         }
 
-        for (int j = 0; j < num_of_workers_in_line; j++)
+        for (int j = 0; j < sizeof(workers)/sizeof(pthread_t); j++)
         {
+            printf("%d\t\t", lnum_of_workers_in_line);
             int *index = malloc(sizeof(int));
             *index = i;
             if (pthread_create(&(workers[j]), NULL, &unordered_function, index) != 0)
@@ -432,7 +452,7 @@ void *unordered_workers_main_thread_function(void *arg)
                 perror("Failed to create a Sequential line thread");
             }
         }
-        for (int j = 0; j < num_of_workers_in_line; j++)
+        for (int j = 0; j < sizeof(workers)/sizeof(pthread_t); j++)
         {
             if (pthread_join((workers[j]), NULL) != 0)
             {
@@ -463,7 +483,6 @@ void *unordered_function(void *arg)
            (num_of_workers_in_line * 100000 * lines_working_times[index] - INITIAL_WORKERS_IN_LINE * 100000 * lines_working_times[index]));
     pthread_mutex_unlock(&(line_mutex[index]));
     free(arg);
-    // printf("an unordered worker ending %d  \n",index);
 }
 
 void *loading_workers_main_function(void *arg)
@@ -682,34 +701,37 @@ void *ceo_function(void *arg)
     int number_of_suspended = 0;
     while (1)
     {
+        printf("CEO WAITING\n");
         pthread_mutex_lock(&ceo_mutex);
         pthread_cond_wait(&ceo_cond, &ceo_mutex);
         pthread_mutex_unlock(&ceo_mutex);
+        printf("CEO WAITING2\n");
 
         //* now checking why we were called
         //TODO Think whether we should keep the mutex in here
-        pthread_mutex_lock(&profit_mutex);
-        if (factory_profit >= max_gain_threshold)
-        {
-            //TODO end everything with a success
-        }
-        else if (factory_profit >= profit_max_threshold)
+        // pthread_mutex_lock(&profit_mutex);
+        if (factory_profit >= profit_max_threshold)
         {
             //! ERROR, Segmentation Fault, it seems we need to aquire all mutexes before doing so
             printf("[ceo_function] The Total Profit now is %d,which is above %d, so we are going to increase the number of workers by 1 on all Lines\n", factory_profit, profit_max_threshold);
+
             num_of_workers_in_line++;
+
+            printf("unlocked the mutex all right\n");
         }
         else if (factory_profit <= profit_min_threshold)
         {
             printf("[ceo_function] Unfortunately, The Total Profit now is %d, which is below %d, so we are going to SUSPEND one worker from each line\n", factory_profit, profit_min_threshold);
+
             num_of_workers_in_line--;
+
             number_of_suspended++;
             if (((float)number_of_suspended / (float)INITIAL_WORKERS_IN_LINE) >= ((float)percentage_suspend_threshold / 100.0))
             {
                 //TODO end everything with a depressing failure
             }
         }
-        pthread_mutex_unlock(&profit_mutex);
+        // pthread_mutex_unlock(&profit_mutex);
     }
     free(arg);
 }
@@ -723,7 +745,7 @@ void set_values(int has_file)
         storage_area_min_threshold = 140;
         num_of_trucks = 4;
         num_of_loading_employees = 10;
-        truck_capacity = 40;
+        truck_capacity = 8;
         truck_trip_time = 7;
         salary_ceo = 2000;
         salary_hr = 1500;
@@ -733,7 +755,7 @@ void set_values(int has_file)
         salary_drivers = 1000;
         salary_extra = 800;
         laptop_manufacturing_cost = 150;
-        laptop_selling_cost = 525;
+        laptop_selling_cost = 5250;
         factory_profit = 0;
         profit_min_threshold = -1000;
         profit_max_threshold = 5000;
