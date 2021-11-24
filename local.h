@@ -94,20 +94,20 @@ extern int num_of_workers_in_line;
 //the number of laptop boxes in the storage room
 extern int num_of_boxes_in_storage_room;
 //message queue
-extern int q_id;
+extern int q_id[10];
 //the number of boxes inside the current truck
 extern int current_num_of_boxes_inside_current_truck;
 //the semaphores needed between the threads
 //the mutexes that are needed to coordinate the work between workers in each line
-extern pthread_mutex_t line_mutex[10];
+extern pthread_mutex_t line_mutex[10][10];
 //mutext for the storage room
 extern pthread_mutex_t storage_room_mutex;
 //semaphores for sequential workers
-extern pthread_mutex_t sequential_mutexes[6];
+extern pthread_mutex_t sequential_mutexes[10][6];
 //semaphores for condition signals
-extern pthread_mutex_t conditional_mutexes[6];
+extern pthread_mutex_t conditional_mutexes[10][6];
 //condition variables for sequential workers
-extern pthread_cond_t sequential_cond[6];
+extern pthread_cond_t sequential_cond[10][6];
 //condition variable
 extern pthread_cond_t cond_serial_to_random;
 //the 10 main threads 
@@ -173,5 +173,7 @@ void* trucks_function(void*);
 void* hr_function(void*);
 //the function for the ceo
 void* ceo_function(void*);
+//function that is responsible for each line
+void* lines_function(void*);
 
 #endif
