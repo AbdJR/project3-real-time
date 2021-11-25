@@ -47,7 +47,7 @@ extern int line_time_range[2];
 //the random time for each line
 extern int lines_working_times[10];
 //the number of workers to work in each line
-extern int num_of_workers_in_line;
+extern int num_of_active_lines;
 //the mutexes that are needed to coordinate the work between workers in each line
 extern pthread_mutex_t line_mutex[10];
 //the number of laptop boxes in the storage room
@@ -95,7 +95,7 @@ int main(int argc, char *argv[])
 
                 while (1)
                 {
-                    pthread_t workers[num_of_workers_in_line];
+                    pthread_t workers[num_of_active_lines];
                     if (semop(sequential_semaphores[(i + 1) % 5], &acquire, 1) < 0)
                     {
                         perror("semop acquire");
@@ -107,7 +107,7 @@ int main(int argc, char *argv[])
                         exit(9);
                     }
                     //working with the threads now
-                    for (int j = 0; j < num_of_workers_in_line; j++)
+                    for (int j = 0; j < num_of_active_lines; j++)
                     {
                         int *index = malloc(sizeof(int));
                         *index = i;
@@ -116,7 +116,7 @@ int main(int argc, char *argv[])
                             perror("Failed to create a Sequential line thread");
                         }
                     }
-                    for (int j = 0; j < num_of_workers_in_line; j++)
+                    for (int j = 0; j < num_of_active_lines; j++)
                     {
                         if (pthread_join(workers[j], NULL) != 0)
                         {
@@ -153,7 +153,7 @@ int main(int argc, char *argv[])
 
                 while (1)
                 {
-                    pthread_t workers[num_of_workers_in_line];
+                    pthread_t workers[num_of_active_lines];
                     // if (semop(sequential_semaphores[(i + 1) % 5], &acquire, 1) < 0)
                     // {
                     //     perror("semop acquire");
@@ -177,7 +177,7 @@ int main(int argc, char *argv[])
                         else
                         {
                             r_msg.mesg_text[i] = 1;
-                            for (int j = 0; j < num_of_workers_in_line; j++)
+                            for (int j = 0; j < num_of_active_lines; j++)
                             {
                                 int *index = malloc(sizeof(int));
                                 *index = i;
@@ -186,7 +186,7 @@ int main(int argc, char *argv[])
                                     perror("Failed to create a Sequential line thread");
                                 }
                             }
-                            for (int j = 0; j < num_of_workers_in_line; j++)
+                            for (int j = 0; j < num_of_active_lines; j++)
                             {
                                 if (pthread_join(workers[j], NULL) != 0)
                                 {
@@ -228,7 +228,7 @@ int main(int argc, char *argv[])
                     } while (msgrcv(q_id, &r_msg, sizeof(r_msg), 0, IPC_NOWAIT) == ENOMSG);
                     r_msg.mesg_text[i % 5] = 1;
 
-                    for (int j = 0; j < num_of_workers_in_line; j++)
+                    for (int j = 0; j < num_of_active_lines; j++)
                     {
                         int *index = malloc(sizeof(int));
                         *index = i;
@@ -237,7 +237,7 @@ int main(int argc, char *argv[])
                             perror("Failed to create a Sequential line thread");
                         }
                     }
-                    for (int j = 0; j < num_of_workers_in_line; j++)
+                    for (int j = 0; j < num_of_active_lines; j++)
                     {
                         if (pthread_join(workers[j], NULL) != 0)
                         {
@@ -309,7 +309,7 @@ void *sequential_function(void *arg)
     int index = *(int *)arg;
     // *(int*)arg = sum //indicator to how we can set the value in the argument
     pthread_mutex_lock(line_mutex + index);
-    usleep((lines_working_times[index] / num_of_workers_in_line) * 1000000 - (num_of_workers_in_line / INITIAL_WORKERS_IN_LINE) * 100000);
+    usleep((lines_working_times[index] / num_of_active_lines) * 1000000 - (num_of_active_lines / INITIAL_WORKERS_IN_LINE) * 100000);
     pthread_mutex_unlock(line_mutex + index);
     free(arg);
 }
@@ -320,7 +320,7 @@ void *unordered_function(void *arg)
     // *(int*)arg = sum //indicator to how we can set the value in the argument
     pthread_mutex_lock(line_mutex + index);
     //the -100,000 is there so that we can see the processes being faster when the number of employees has increased
-    usleep((float)(lines_working_times[index] / (float)num_of_workers_in_line) * 1000000 - (num_of_workers_in_line / INITIAL_WORKERS_IN_LINE) * 100000);
+    usleep((float)(lines_working_times[index] / (float)num_of_active_lines) * 1000000 - (num_of_active_lines / INITIAL_WORKERS_IN_LINE) * 100000);
     pthread_mutex_unlock(line_mutex + index);
     free(arg);
 }
@@ -404,7 +404,7 @@ void set_values(int has_file)
         percentage_suspend_threshold = 45;
         line_time_range[0] = 5;
         line_time_range[1] = 10;
-        num_of_workers_in_line = INITIAL_WORKERS_IN_LINE;
+        num_of_active_lines = INITIAL_WORKERS_IN_LINE;
         num_of_boxes_in_storage_room = 0;
     }
     for (int k = 0; k < 10; k++)

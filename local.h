@@ -90,7 +90,7 @@ extern int line_time_range[2];
 // the random time for each line
 extern int lines_working_times[10];
 //the number of workers to work in each line
-extern int num_of_workers_in_line;
+extern int num_of_active_lines;
 //the number of laptop boxes in the storage room
 extern int num_of_boxes_in_storage_room;
 //message queue

@@ -49,7 +49,7 @@ int line_time_range[2];
 //the random time for each line
 int lines_working_times[10];
 //the number of workers to work in each sequential line
-int num_of_workers_in_line;
+int num_of_active_lines;
 //the number of laptop boxes in the storage room
 int num_of_boxes_in_storage_room;
 //message queue
@@ -263,12 +263,12 @@ void *serial_workers_main_thread_function(void *arg)
 {
     int i = *(int *)arg;
     //converting num_of_workers_in_line to a local variable
-    int lnum_of_workers_in_line = num_of_workers_in_line;
+    int lnum_of_workers_in_line = num_of_active_lines;
     while (1)
     {
-        if (lnum_of_workers_in_line != num_of_workers_in_line)
+        if (lnum_of_workers_in_line != num_of_active_lines)
         {
-            lnum_of_workers_in_line = num_of_workers_in_line;
+            lnum_of_workers_in_line = num_of_active_lines;
         }
         pthread_t workers[lnum_of_workers_in_line];
         if (pthread_mutex_lock(&(sequential_mutexes[(i + 1)])) < 0)
@@ -334,8 +334,8 @@ void *sequential_function(void *arg)
     int index = *(int *)arg;
     // *(int*)arg = sum //indicator to how we can set the value in the argument
     pthread_mutex_lock((line_mutex + index));
-    double time = ((double)lines_working_times[index] / (double)num_of_workers_in_line) * 100000 -
-                  (num_of_workers_in_line * 100000 * lines_working_times[index] - INITIAL_WORKERS_IN_LINE * 100000 * lines_working_times[index]);
+    double time = ((double)lines_working_times[index] / (double)num_of_active_lines) * 100000 -
+                  (num_of_active_lines * 100000 * lines_working_times[index] - INITIAL_WORKERS_IN_LINE * 100000 * lines_working_times[index]);
     // printf("a sequential worker (%d) working, I have a working time of %lf, and total is %ld\n",index,time,(lines_working_times[index]*1000000));
     usleep(time);
     pthread_mutex_unlock((line_mutex + index));
@@ -346,12 +346,12 @@ void *unordered_workers_main_thread_function(void *arg)
 {
     int i = *(int *)arg;
     //converting this to a local variable
-    int lnum_of_workers_in_line = num_of_workers_in_line;
+    int lnum_of_workers_in_line = num_of_active_lines;
     while (1)
     {
-        if (lnum_of_workers_in_line != num_of_workers_in_line)
+        if (lnum_of_workers_in_line != num_of_active_lines)
         {
-            lnum_of_workers_in_line = num_of_workers_in_line;
+            lnum_of_workers_in_line = num_of_active_lines;
         }
 
         pthread_t workers[lnum_of_workers_in_line];
@@ -363,9 +363,9 @@ void *unordered_workers_main_thread_function(void *arg)
         do
         {
             message r_msg;
-            if (lnum_of_workers_in_line != num_of_workers_in_line)
+            if (lnum_of_workers_in_line != num_of_active_lines)
             {
-                lnum_of_workers_in_line = num_of_workers_in_line;
+                lnum_of_workers_in_line = num_of_active_lines;
             }
             // pthread_t workers[lnum_of_workers_in_line];
             int err = msgrcv(q_id, &r_msg, sizeof(r_msg), i, IPC_NOWAIT);
@@ -433,9 +433,9 @@ void *unordered_workers_main_thread_function(void *arg)
                 }
             }
         } while (pthread_mutex_trylock(&(sequential_mutexes[5])) != 0);
-        if (lnum_of_workers_in_line != num_of_workers_in_line)
+        if (lnum_of_workers_in_line != num_of_active_lines)
         {
-            lnum_of_workers_in_line = num_of_workers_in_line;
+            lnum_of_workers_in_line = num_of_active_lines;
         }
         for (int r = 0; r < 5; r++)
         {
@@ -479,8 +479,8 @@ void *unordered_function(void *arg)
     pthread_mutex_lock(&(line_mutex[index]));
     //the second part of the equation is there so that we can see the processes being faster when the number of employees has increased,
     //it also affects the system negatively if number of workers decreased
-    usleep((float)(lines_working_times[index] / (float)num_of_workers_in_line) * 1000000 -
-           (num_of_workers_in_line * 100000 * lines_working_times[index] - INITIAL_WORKERS_IN_LINE * 100000 * lines_working_times[index]));
+    usleep((float)(lines_working_times[index] / (float)num_of_active_lines) * 1000000 -
+           (num_of_active_lines * 100000 * lines_working_times[index] - INITIAL_WORKERS_IN_LINE * 100000 * lines_working_times[index]));
     pthread_mutex_unlock(&(line_mutex[index]));
     free(arg);
 }
@@ -683,7 +683,7 @@ void *hr_function(void *arg)
         // num_of_sent_truck = 0;
         pthread_mutex_lock(&profit_mutex);
         factory_profit += truck_capacity * 10 * (laptop_selling_cost - laptop_manufacturing_cost) -
-                          (salary_hr + salary_ceo + NUMBER_OF_LINES * num_of_workers_in_line * salaray_technical + NUMBER_OF_LINES * salary_storage +
+                          (salary_hr + salary_ceo + NUMBER_OF_LINES * num_of_active_lines * salaray_technical + NUMBER_OF_LINES * salary_storage +
                            num_of_loading_employees * salary_loading + salary_extra + salary_drivers);
         printf("[hr_function] The Total Profit is %d\n", factory_profit);
         if (factory_profit >= profit_max_threshold || factory_profit <= profit_min_threshold || factory_profit >= max_gain_threshold)
@@ -715,7 +715,7 @@ void *ceo_function(void *arg)
             //! ERROR, Segmentation Fault, it seems we need to aquire all mutexes before doing so
             printf("[ceo_function] The Total Profit now is %d,which is above %d, so we are going to increase the number of workers by 1 on all Lines\n", factory_profit, profit_max_threshold);
 
-            num_of_workers_in_line++;
+            num_of_active_lines++;
 
             printf("unlocked the mutex all right\n");
         }
@@ -723,7 +723,7 @@ void *ceo_function(void *arg)
         {
             printf("[ceo_function] Unfortunately, The Total Profit now is %d, which is below %d, so we are going to SUSPEND one worker from each line\n", factory_profit, profit_min_threshold);
 
-            num_of_workers_in_line--;
+            num_of_active_lines--;
 
             number_of_suspended++;
             if (((float)number_of_suspended / (float)INITIAL_WORKERS_IN_LINE) >= ((float)percentage_suspend_threshold / 100.0))
@@ -765,7 +765,7 @@ void set_values(int has_file)
         percentage_suspend_threshold = 45;
         line_time_range[0] = 1;
         line_time_range[1] = 2;
-        num_of_workers_in_line = INITIAL_WORKERS_IN_LINE;
+        num_of_active_lines = INITIAL_WORKERS_IN_LINE;
         num_of_boxes_in_storage_room = 0;
     }
     current_num_of_boxes_inside_current_truck = 0;
