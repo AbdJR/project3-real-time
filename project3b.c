@@ -54,6 +54,8 @@ int num_of_active_lines;
 int num_of_boxes_in_storage_room;
 //message queue
 int q_id[10];
+//which line to suspend
+int suspend_line[10];
 //for line 4 to make sure the other lines can still handle more laptops
 int wait_line_4;
 //the number of boxes inside the current truck
@@ -162,7 +164,7 @@ int main(int argc, char *argv[])
         }
     }
     //*creating the storage employees that load trucks main function
-    
+
     if (pthread_create(&employees[NUMBER_OF_LINES], NULL, &loading_workers_main_function, NULL) != 0)
     {
         perror("Failed to create a Storage Filler thread");
@@ -251,7 +253,7 @@ int main(int argc, char *argv[])
             pthread_cond_destroy(&hr_cond);
             pthread_cond_destroy(&ceo_cond);
         }
-        for(int s = 0; s < 6; s++)
+        for (int s = 0; s < 6; s++)
         {
             //mutexes
             pthread_mutex_destroy(&sequential_mutexes[k][s]);
@@ -260,7 +262,7 @@ int main(int argc, char *argv[])
             pthread_cond_destroy(&sequential_cond[k][s]);
         }
         //mutexes
-        for(int s = 0; s < 10; s++)
+        for (int s = 0; s < 10; s++)
         {
             pthread_mutex_destroy(&line_mutex[k][s]);
         }
@@ -317,6 +319,10 @@ void *serial_workers_main_thread_function(void *arg)
     {
         // printf("Hello From (Serial) Line %d\n",l);
         // pthread_t workers[num_of_workers_in_line];
+        while (suspend_line[l])
+        {
+            sleep(1);
+        }
         if (pthread_mutex_lock(&(sequential_mutexes[l][(i + 1)])) < 0)
         {
             perror("mutex lcok");
@@ -370,7 +376,11 @@ void *unordered_workers_main_thread_function(void *arg)
     {
         // printf("Hello From (Unordered) Line %d\n",l);
         // pthread_t workers[num_of_workers_in_line];
-
+        //TODO MAKE IT A PTHREAD_COND_WAIT If POSSIBLE
+        while (suspend_line[l])
+        {
+            sleep(1);
+        }
         //working with the threads now
         message r_msg;
         // int is_locked;
@@ -635,6 +645,7 @@ void *trucks_function(void *arg)
 void *hr_function(void *arg)
 {
     // int num_of_sent_truck = 0;
+    int factory_round_profit = 0;
     while (1)
     {
         pthread_mutex_lock(&hr_mutex);
@@ -644,11 +655,13 @@ void *hr_function(void *arg)
         //* now calculating the profit that is calculated once every successful truck delivery
         // num_of_sent_truck = 0;
         pthread_mutex_lock(&profit_mutex);
-        factory_profit += truck_capacity * 10 * (laptop_selling_cost - laptop_manufacturing_cost) -
+        factory_round_profit = truck_capacity * 10 * (laptop_selling_cost - laptop_manufacturing_cost) -
                           (salary_hr + salary_ceo + NUMBER_OF_LINES * num_of_active_lines * salaray_technical + num_of_active_lines * salary_storage +
                            num_of_loading_employees * salary_loading + salary_extra + salary_drivers);
-        printf("[hr_function] The Total Profit is %d there are %d active lines\n", factory_profit,num_of_active_lines);
-        if (factory_profit >= profit_max_threshold || factory_profit <= profit_min_threshold || factory_profit >= max_gain_threshold)
+        factory_profit += factory_round_profit;
+        printf("[hr_function] The Total Profit is %d, the round profit is %d there are %d active lines\n", factory_profit,factory_round_profit, num_of_active_lines);
+
+        if (factory_round_profit >= profit_max_threshold || factory_round_profit <= profit_min_threshold || factory_profit >= max_gain_threshold)
         {
             pthread_cond_signal(&ceo_cond);
         }
@@ -660,25 +673,31 @@ void *hr_function(void *arg)
 void *ceo_function(void *arg)
 {
     //so we can see if we suspended more than a certain barrier
-    int suspended_lines[NUMBER_OF_LINES];
+    // int suspended_lines[NUMBER_OF_LINES];
     int number_of_suspended = 0;
-    for (int i = 0; i < NUMBER_OF_LINES; i++)
-    {
-        suspended_lines[i] = 0;
-    }
-    
+    // for (int i = 0; i < NUMBER_OF_LINES; i++)
+    // {
+    //     suspended_lines[i] = 0;
+    // }
+    int prev_round_profit = 0;
+    int current_round_profit = 0;
     while (1)
     {
         printf("CEO WAITING\n");
         pthread_mutex_lock(&ceo_mutex);
         pthread_cond_wait(&ceo_cond, &ceo_mutex);
+        current_round_profit = factory_profit;
         pthread_mutex_unlock(&ceo_mutex);
         printf("CEO WAITING2\n");
 
         //* now checking why we were called
         //TODO Think whether we should keep the mutex in here
         // pthread_mutex_lock(&profit_mutex);
-        if (factory_profit >= profit_max_threshold)
+        if(current_round_profit >= max_gain_threshold)
+        {
+            printf("Should End Everything Here Happily\n");
+        }
+        else if ((current_round_profit - prev_round_profit) >= profit_max_threshold)
         {
             ////  ERROR, Segmentation Fault, it seems we need to aquire all mutexes before doing so
             printf("[ceo_function] The Total Profit now is %d,which is above %d, so we are going to release Lines if there were any suspended\n", factory_profit, profit_max_threshold);
@@ -688,48 +707,46 @@ void *ceo_function(void *arg)
             for (int i = 0; i < NUMBER_OF_LINES; i++)
             {
                 /* code */
-                if(suspended_lines[i] == 1)
+                if (suspend_line[i] == 1)
                 {
+                    suspend_line[i] = 0;
                     number_of_suspended--;
                     num_of_active_lines++;
-                    //release all locks
-                    for (size_t m = 0; m < 6 ; m++)
-                    {
-                        pthread_mutex_unlock(&sequential_mutexes[i][m]);
-                    }
-                    suspended_lines[i] = 0;
-                    printf("unsuspended line %d\n",i);
+                    // //release all locks
+                    // for (size_t m = 0; m < 6; m++)
+                    // {
+                    //     pthread_mutex_unlock(&sequential_mutexes[i][m]);
+                    // }
+                    printf("unsuspended line %d\n", i);
                     break;
                 }
             }
-            
 
             printf("unlocked the mutex all right\n");
         }
-        else if (factory_profit <= profit_min_threshold)
+        else if ((current_round_profit - factory_profit) <= profit_min_threshold)
         {
-            printf("[ceo_function] Unfortunately, The Total Profit now is %d, which is below %d, so we are going to SUSPEND one worker from each line. Current # od active lines = %d\n", factory_profit,profit_min_threshold,num_of_active_lines );
+            printf("[ceo_function] Unfortunately, The Total Profit now is %d, which is below %d, so we are going to SUSPEND one worker from each line. Current # od active lines = %d\n", factory_profit, profit_min_threshold, num_of_active_lines);
             //so that all next messages will be of normal color
             // printf("%s",none);
             for (int l = 9; l >= 0; l--)
             {
-                if(suspended_lines[l] == 0)
+                if (suspend_line[l] == 0)
                 {
                     //acquire all locks
-                    printf("Locking Line %d\n",l);
-                    for (int m = 0; m < 5 ; m++)
-                    {
-                        printf("Locking %d\n",m);
-                        if(pthread_mutex_lock(&sequential_mutexes[l][m])< 0)
-                        {
-                            perror("[ceo_function] Error locking the mutexes of a line");
-                        }
-
-                    }
-                    suspended_lines[l] = 1;
+                    // printf("Locking Line %d\n", l);
+                    // for (int m = 0; m < 5; m++)
+                    // {
+                    //     printf("Locking %d\n", m);
+                    //     if (pthread_mutex_lock(&sequential_mutexes[l][m]) < 0)
+                    //     {
+                    //         perror("[ceo_function] Error locking the mutexes of a line");
+                    //     }
+                    // }
+                    suspend_line[l] = 1;
                     number_of_suspended++;
                     --num_of_active_lines;
-                    printf("suspended line %d\n",l);
+                    printf("suspended line %d\n", l);
                     break;
                 }
             }
@@ -738,6 +755,7 @@ void *ceo_function(void *arg)
             {
                 //TODO end everything with a depressing failure
             }
+            prev_round_profit = current_round_profit;
         }
         // pthread_mutex_unlock(&profit_mutex);
     }
@@ -753,17 +771,17 @@ void set_values(int has_file)
         storage_area_min_threshold = 140;
         num_of_trucks = 4;
         num_of_loading_employees = 10;
-        truck_capacity = 25;
+        truck_capacity = 27;
         truck_trip_time = 7;
-        salary_ceo = 2000;
-        salary_hr = 1500;
+        salary_ceo = 1500;
+        salary_hr = 1300;
         salaray_technical = 1200;
         salary_storage = 900;
         salary_loading = 900;
-        salary_drivers = 1000;
-        salary_extra = 800;
+        salary_drivers = 900;
+        salary_extra = 1000;
         laptop_manufacturing_cost = 150;
-        laptop_selling_cost = 450;
+        laptop_selling_cost = 500;
         factory_profit = 0;
         profit_min_threshold = -1000;
         profit_max_threshold = 5000;
@@ -782,6 +800,7 @@ void set_values(int has_file)
         lines_working_times[k] = (rand() % (line_time_range[1] -
                                             line_time_range[0])) +
                                  line_time_range[0];
+        suspend_line[k] = 0;
     }
     for (int k = 0; k < 10; k++)
     {

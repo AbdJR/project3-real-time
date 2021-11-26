@@ -95,6 +95,8 @@ extern int num_of_active_lines;
 extern int num_of_boxes_in_storage_room;
 //message queue
 extern int q_id[10];
+//which line to suspend
+extern int suspend_line[10];
 //the number of boxes inside the current truck
 extern int current_num_of_boxes_inside_current_truck;
 //the semaphores needed between the threads
