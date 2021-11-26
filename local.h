@@ -99,7 +99,8 @@ extern int q_id[10];
 extern int suspend_line[10];
 //the number of boxes inside the current truck
 extern int current_num_of_boxes_inside_current_truck;
-//the semaphores needed between the threads
+//to determine when to close all the threads and all the program
+extern int should_exit;
 //the mutexes that are needed to coordinate the work between workers in each line
 extern pthread_mutex_t line_mutex[10][10];
 //mutext for the storage room
@@ -153,8 +154,11 @@ typedef struct mesg_buffer
   int mesg_text[5];
 } message;
 
+int read_values(char *);
 // set the values for each of the variables 
 void set_values(int);
+//to display a loading thing on the screen
+void *loading_function(void *);
 //the function where the sequential workers will work
 void *sequential_function(void *);
 //main thread function for serial workers
